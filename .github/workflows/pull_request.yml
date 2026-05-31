@@ -1,0 +1,100 @@
+name: Pull Request
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain with rustfmt
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Run cargo check
+        run: cargo check --locked
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs:
+      - fmt
+      - check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Run cargo test
+        run: cargo test --locked
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    needs:
+      - fmt
+      - check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain with clippy
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: clippy
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Run cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
