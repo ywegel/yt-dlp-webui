@@ -2,3 +2,4 @@
 /target
 /static
 .env
+jobs.db
