@@ -3,11 +3,14 @@ use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use std::convert::Infallible;
 use tokio_stream::{Stream, StreamExt};
+use tracing;
 
 pub async fn events(
     State(st): State<AppState>,
     Path(id): Path<String>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    tracing::info!("Events requested for job: id={}", id);
+
     let rx = st.channels.lock().await.get(&id).map(|tx| tx.subscribe());
 
     let stream = async_stream::stream! {
@@ -16,13 +19,17 @@ pub async fn events(
             while let Some(item) = s.next().await {
                 if let Ok(p) = item {
                     let terminal = !matches!(p, Progress::Running { .. });
+                    if let Progress::Running {percent} = p {
+                        tracing::debug!("Progress event: {:?}", percent);
+                    }
                     yield Ok(Event::default().json_data(p).unwrap());
                     if terminal { break; }
+                } else {
+                    tracing::warn!("Received invalid progress event for job: {}", id);
                 }
             }
         } else {
-            // TODO: Log if an error occured
-            // (SELECT status, file FROM jobs WHERE id = ?)
+            tracing::warn!("No channel found for job: id={}", id);
         }
     };
     Sse::new(stream).keep_alive(KeepAlive::default())

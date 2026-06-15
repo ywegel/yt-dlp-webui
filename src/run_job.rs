@@ -1,8 +1,16 @@
 use crate::submit::Mode;
 use crate::{AppState, Progress};
 use tokio::sync::broadcast::Sender;
+use tracing;
 
 pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Sender<Progress>) {
+    tracing::info!(
+        "Starting download job: id={}, url={}, mode={}",
+        id,
+        url,
+        mode.as_str()
+    );
+
     let _permit = st.limiter.acquire().await.unwrap();
 
     let fmt = match mode {
@@ -11,6 +19,8 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
     };
 
     let out = format!("/tmp/ytdlp/{id}/%(title)s.%(ext)s");
+
+    tracing::debug!("Download format: {}, output: {}", fmt, out);
 
     let mut child = tokio::process::Command::new("yt-dlp")
         .args([
@@ -34,30 +44,50 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(pct) = line.strip_prefix("progress:").and_then(parse_percent) {
             let _ = tx.send(Progress::Running { percent: pct });
+            tracing::debug!("Progress: {}%", pct);
         }
     }
 
     let ok = child.wait().await.map(|s| s.success()).unwrap_or(false);
     if ok {
         let file = first_file_in(&format!("/tmp/ytdlp/{id}")).unwrap_or_default();
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE jobs SET status='done', file=?, completed_at=strftime('%s','now') WHERE id=?",
         )
         .bind(&file)
         .bind(&id)
         .execute(&st.db)
-        .await
-        .ok();
+        .await;
+
+        match result {
+            Ok(_) => {
+                tracing::info!("Download completed: id={}, file={}", id, file);
+            }
+            Err(e) => {
+                tracing::error!("Failed to update job status: {e:?}");
+            }
+        }
+
         let _ = tx.send(Progress::Done { file });
     } else {
-        sqlx::query("UPDATE jobs SET status='failed' WHERE id=?")
+        let result = sqlx::query("UPDATE jobs SET status='failed' WHERE id=?")
             .bind(&id)
             .execute(&st.db)
-            .await
-            .ok();
+            .await;
+
+        match result {
+            Ok(_) => {
+                tracing::error!("Download failed: id={}, error={}", id, "yt-dlp failed");
+            }
+            Err(e) => {
+                tracing::error!("Failed to update failed job: {e:?}");
+            }
+        }
+
         let _ = tx.send(Progress::Failed {
             error: "yt-dlp failed".into(),
         });
+        eprintln!("yt-dlp error: {:?}", child.stderr.take().unwrap())
     }
     st.channels.lock().await.remove(&id);
 }

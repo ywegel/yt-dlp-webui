@@ -12,7 +12,7 @@ pub enum Mode {
 }
 
 impl Mode {
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Mode::Video => "video",
             Mode::Audio => "audio",
@@ -32,14 +32,29 @@ pub struct SubmitResp {
 }
 
 pub async fn submit(State(st): State<AppState>, Json(req): Json<SubmitReq>) -> Json<SubmitResp> {
+    tracing::info!(
+        "Submitting new job: mode={}, url={}",
+        req.mode.as_str(),
+        req.url
+    );
+
     let id = uuid::Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO jobs (id, url, mode, status) VALUES (?,?,?,'queued')")
+    let result = sqlx::query("INSERT INTO jobs (id, url, mode, status) VALUES (?,?,?,'queued')")
         .bind(&id)
         .bind(&req.url)
         .bind(req.mode.as_str())
         .execute(&st.db)
-        .await
-        .unwrap();
+        .await;
+
+    let _id = match result {
+        Ok(stmt) => stmt.rows_affected(),
+        Err(e) => {
+            tracing::error!("Failed to insert job: {e:?}");
+            return Json(SubmitResp { id });
+        }
+    };
+
+    tracing::debug!("Job inserted with id={}", id);
 
     let (tx, _) = broadcast::channel::<Progress>(64);
     st.channels.lock().await.insert(id.clone(), tx.clone());

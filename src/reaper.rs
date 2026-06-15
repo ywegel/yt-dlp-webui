@@ -1,7 +1,9 @@
 use crate::AppState;
 use std::time::Duration;
+use tracing;
 
 pub async fn reaper(st: AppState, ttl: i64) {
+    tracing::info!("Reaper spawned: TTL={} seconds", ttl);
     let mut tick = tokio::time::interval(Duration::from_secs(60));
     loop {
         tick.tick().await;
@@ -15,12 +17,16 @@ pub async fn reaper(st: AppState, ttl: i64) {
         .unwrap_or_default();
 
         for (id, file) in rows {
+            tracing::info!("Removing expired file: id={}, file={}", id, file);
             sqlx::query("UPDATE jobs SET status='expired' WHERE id=?")
                 .bind(&id)
                 .execute(&st.db)
                 .await
                 .ok();
-            tokio::fs::remove_file(&file).await.ok();
+            let res = tokio::fs::remove_file(&file).await;
+            if let Err(e) = res {
+                tracing::warn!("Failed to remove file {}: {}", file, e);
+            }
         }
     }
 }

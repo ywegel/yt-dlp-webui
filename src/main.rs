@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{Mutex, Semaphore};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Clone)]
 struct AppState {
@@ -32,6 +33,18 @@ enum Progress {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO) // TODO: Set tracing leve from env
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
+        .compact()
+        .init();
+
+    tracing::debug!("yt-dlp-webui starting...");
+
     let db = sqlx::SqlitePool::connect("sqlite:jobs.db?mode=rwc")
         .await
         .unwrap();
@@ -65,9 +78,10 @@ async fn main() {
         .route("/api/submit", post(submit))
         .route("/api/jobs/{id}/events", get(events))
         .route("/api/jobs/{id}/file", get(download))
-        .fallback_service(tower_http::services::ServeDir::new("../serve"))
+        .fallback_service(tower_http::services::ServeDir::new("./serve"))
         .with_state(st);
 
     let l = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    tracing::info!("Listening on {}", "0.0.0.0:8080");
     axum::serve(l, app).await.unwrap();
 }
