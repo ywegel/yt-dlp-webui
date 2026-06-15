@@ -82,6 +82,6 @@ async fn main() {
         .with_state(st);
 
     let l = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    tracing::info!("Listening on {}", "0.0.0.0:8080");
+    tracing::info!("Listening on http://{}", "0.0.0.0:8080");
     axum::serve(l, app).await.unwrap();
 }
