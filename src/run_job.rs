@@ -42,7 +42,7 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
     use tokio::io::{AsyncBufReadExt, BufReader};
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     while let Ok(Some(line)) = lines.next_line().await {
-        if let Some(pct) = line.strip_prefix("progress:").and_then(parse_percent) {
+        if let Some(pct) = parse_percent(&line) {
             let _ = tx.send(Progress::Running { percent: pct });
             tracing::debug!("Progress: {}%", pct);
         }
