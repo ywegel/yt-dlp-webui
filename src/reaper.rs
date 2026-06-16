@@ -1,6 +1,6 @@
-use crate::AppState;
 use std::time::Duration;
-use tracing;
+
+use crate::AppState;
 
 pub async fn reaper(st: AppState, ttl: i64) {
     tracing::info!("Reaper spawned: TTL={} seconds", ttl);

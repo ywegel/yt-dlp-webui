@@ -1,9 +1,15 @@
-use crate::{AppState, Progress};
-use axum::extract::{Path, State};
-use axum::response::sse::{Event, KeepAlive, Sse};
 use std::convert::Infallible;
-use tokio_stream::{Stream, StreamExt};
-use tracing;
+
+use axum::extract::Path;
+use axum::extract::State;
+use axum::response::sse::Event;
+use axum::response::sse::KeepAlive;
+use axum::response::sse::Sse;
+use tokio_stream::Stream;
+use tokio_stream::StreamExt;
+
+use crate::AppState;
+use crate::Progress;
 
 pub async fn events(
     State(st): State<AppState>,

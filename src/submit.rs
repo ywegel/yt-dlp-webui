@@ -1,8 +1,10 @@
-use crate::run_job::run_job;
-use crate::{AppState, Progress};
 use axum::Json;
 use axum::extract::State;
 use tokio::sync::broadcast;
+
+use crate::AppState;
+use crate::Progress;
+use crate::run_job::run_job;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "lowercase")]

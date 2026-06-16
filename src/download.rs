@@ -1,10 +1,12 @@
-use crate::AppState;
-use axum::{
-    body::Body,
-    extract::{Path, State},
-    http::{Response, StatusCode, header},
-};
+use axum::body::Body;
+use axum::extract::Path;
+use axum::extract::State;
+use axum::http::Response;
+use axum::http::StatusCode;
+use axum::http::header;
 use tokio_util::io::ReaderStream;
+
+use crate::AppState;
 
 pub async fn download(
     State(st): State<AppState>,
@@ -40,12 +42,10 @@ pub async fn download(
         .await
         .ok();
 
-    let file = tokio::fs::File::open(&file_path)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to open file {}: {e:?}", file_path);
-            StatusCode::NOT_FOUND
-        })?;
+    let file = tokio::fs::File::open(&file_path).await.map_err(|e| {
+        tracing::error!("Failed to open file {}: {e:?}", file_path);
+        StatusCode::NOT_FOUND
+    })?;
 
     let file_size = file
         .metadata()

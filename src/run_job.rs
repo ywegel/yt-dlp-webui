@@ -1,7 +1,8 @@
-use crate::submit::Mode;
-use crate::{AppState, Progress};
 use tokio::sync::broadcast::Sender;
-use tracing;
+
+use crate::AppState;
+use crate::Progress;
+use crate::submit::Mode;
 
 pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Sender<Progress>) {
     tracing::info!(
@@ -85,7 +86,8 @@ async fn do_download(
         "Internal error: stdout not captured".to_string()
     })?;
 
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::AsyncBufReadExt;
+    use tokio::io::BufReader;
     let mut lines = BufReader::new(stdout).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(pct) = parse_percent(&line) {

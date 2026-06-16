@@ -4,17 +4,21 @@ mod reaper;
 mod run_job;
 mod submit;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use axum::Router;
+use axum::routing::get;
+use axum::routing::post;
+use tokio::sync::Mutex;
+use tokio::sync::Semaphore;
+use tokio::sync::broadcast::Sender;
+use tracing_subscriber::fmt::format::FmtSpan;
+
 use crate::download::download;
 use crate::events::events;
 use crate::reaper::reaper;
 use crate::submit::submit;
-use axum::Router;
-use axum::routing::{get, post};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::broadcast::Sender;
-use tokio::sync::{Mutex, Semaphore};
-use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Clone)]
 struct AppState {
