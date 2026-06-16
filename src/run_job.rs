@@ -53,27 +53,26 @@ async fn do_download(
     mode: Mode,
     tx: &Sender<Progress>,
 ) -> Result<String, String> {
-    let fmt = match mode {
-        Mode::Video => "bv*+ba/b",
-        Mode::Audio => "ba",
-    };
     let out = format!("/tmp/ytdlp/{id}/%(title)s.%(ext)s");
 
-    tracing::debug!("Download format: {}, output: {}", fmt, out);
+    let mut args = vec![
+        "-o",
+        &out,
+        "--no-playlist",
+        "--newline",
+        "--progress-template",
+        "download:%(progress._percent_str)s",
+    ];
+    match mode {
+        Mode::Video => args.extend(["-f", "bv*+ba/b"]),
+        Mode::Audio => args.extend(["-x", "--audio-quality", "0"]),
+    }
+    args.extend(["--", url]);
+
+    tracing::debug!("yt-dlp args: {:?}", args);
 
     let mut child = tokio::process::Command::new("yt-dlp")
-        .args([
-            "-f",
-            fmt,
-            "-o",
-            &out,
-            "--no-playlist",
-            "--newline",
-            "--progress-template",
-            "download:%(progress._percent_str)s",
-            "--",
-            url,
-        ])
+        .args(&args)
         .stdout(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| {
