@@ -1,3 +1,4 @@
+mod config;
 mod download;
 mod events;
 mod reaper;
@@ -47,6 +48,8 @@ async fn main() {
         .compact()
         .init();
 
+    let config = config::Config::load();
+
     tracing::debug!("yt-dlp-webui starting...");
 
     let db = sqlx::SqlitePool::connect("sqlite:jobs.db?mode=rwc")
@@ -72,11 +75,11 @@ async fn main() {
 
     let st = AppState {
         db,
-        limiter: Arc::new(Semaphore::new(3)),
+        limiter: Arc::new(Semaphore::new(config.jobs.max_concurrent)),
         channels: Arc::new(Mutex::new(HashMap::new())),
     };
 
-    tokio::spawn(reaper(st.clone(), 600));
+    tokio::spawn(reaper(st.clone(), config.jobs.reaper_interval_secs));
 
     let app = Router::new()
         .route("/api/submit", post(submit))
@@ -85,7 +88,8 @@ async fn main() {
         .fallback_service(tower_http::services::ServeDir::new("./serve"))
         .with_state(st);
 
-    let l = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    tracing::info!("Listening on http://{}", "0.0.0.0:8080");
+    let addr = format!("{}:{}", config.server.host, config.server.port);
+    let l = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    tracing::info!("Listening on http://{}", addr);
     axum::serve(l, app).await.unwrap();
 }
