@@ -11,7 +11,11 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
         mode.as_str()
     );
 
-    let _permit = st.limiter.acquire().await.unwrap();
+    let _permit = st
+        .limiter
+        .acquire()
+        .await
+        .expect("semaphore was closed before run_job could acquire a permit");
 
     match do_download(&id, &url, mode, &tx).await {
         Ok(file) => {
@@ -90,13 +94,17 @@ async fn do_download(
         }
     }
 
-    let success = child.wait().await.map(|s| s.success()).unwrap_or(false);
-    if !success {
+    let status = child.wait().await.map_err(|e| {
+        tracing::error!("Failed to wait for yt-dlp process: id={id}, error={e}");
+        format!("Failed to wait for yt-dlp: {e}")
+    })?;
+    if !status.success() {
         tracing::error!("yt-dlp exited with non-zero status: id={}", id);
         return Err("yt-dlp failed".into());
     }
 
-    let file = first_file_in(&format!("/tmp/ytdlp/{id}")).unwrap_or_default();
+    let file = first_file_in(&format!("/tmp/ytdlp/{id}"))
+        .ok_or_else(|| "yt-dlp produced no output file".to_string())?;
     Ok(file)
 }
 

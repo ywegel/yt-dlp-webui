@@ -22,7 +22,7 @@ pub async fn events(
                     if let Progress::Running {percent} = p {
                         tracing::debug!("Progress event: {:?}", percent);
                     }
-                    yield Ok(Event::default().json_data(p).unwrap());
+                    yield Ok(Event::default().json_data(p).expect("Progress serialization is infallible"));
                     if terminal { break; }
                 } else {
                     tracing::warn!("Received invalid progress event for job: {}", id);
