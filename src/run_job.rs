@@ -4,6 +4,33 @@ use crate::AppState;
 use crate::Progress;
 use crate::submit::Mode;
 
+#[derive(Debug, thiserror::Error)]
+enum DownloadError {
+    #[error("failed to start yt-dlp")]
+    Spawn(#[source] std::io::Error),
+    #[error("yt-dlp stdout was not captured")]
+    StdoutNotCaptured,
+    #[error("failed while waiting for yt-dlp to exit")]
+    Wait(#[source] std::io::Error),
+    #[error("yt-dlp exited with status {0:?}")]
+    NonZeroExit(Option<i32>),
+    #[error("yt-dlp produced no output file")]
+    NoOutputFile,
+}
+
+impl DownloadError {
+    /// Message safe to show to the client; internal detail stays in the logs.
+    fn user_message(&self) -> &'static str {
+        match self {
+            DownloadError::Spawn(_) => "Failed to start the download",
+            DownloadError::StdoutNotCaptured => "Internal error starting the download",
+            DownloadError::Wait(_) => "Download process failed unexpectedly",
+            DownloadError::NonZeroExit(_) => "Download failed",
+            DownloadError::NoOutputFile => "Download completed but produced no file",
+        }
+    }
+}
+
 pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Sender<Progress>) {
     tracing::info!(
         "Starting download job: id={}, url={}, mode={}",
@@ -39,8 +66,10 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
                 .await
                 .inspect_err(|e| tracing::error!("Failed to update failed job: {e:?}"));
 
-            tracing::error!("Download failed: id={}, error={}", id, e);
-            let _ = tx.send(Progress::Failed { error: e });
+            tracing::error!("Download failed: id={}, error={:?}", id, e);
+            let _ = tx.send(Progress::Failed {
+                error: e.user_message().to_string(),
+            });
         }
     }
 
@@ -52,7 +81,7 @@ async fn do_download(
     url: &str,
     mode: Mode,
     tx: &Sender<Progress>,
-) -> Result<String, String> {
+) -> Result<String, DownloadError> {
     let out = format!("/tmp/ytdlp/{id}/%(title)s.%(ext)s");
 
     let mut args = vec![
@@ -75,15 +104,12 @@ async fn do_download(
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            tracing::error!("Failed to spawn yt-dlp: {e}");
-            format!("Failed to start yt-dlp: {e}")
-        })?;
+        .map_err(DownloadError::Spawn)?;
 
-    let stdout = child.stdout.take().ok_or_else(|| {
-        tracing::error!("yt-dlp stdout was not captured");
-        "Internal error: stdout not captured".to_string()
-    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or(DownloadError::StdoutNotCaptured)?;
 
     use tokio::io::AsyncBufReadExt;
     use tokio::io::BufReader;
@@ -95,17 +121,12 @@ async fn do_download(
         }
     }
 
-    let status = child.wait().await.map_err(|e| {
-        tracing::error!("Failed to wait for yt-dlp process: id={id}, error={e}");
-        format!("Failed to wait for yt-dlp: {e}")
-    })?;
+    let status = child.wait().await.map_err(DownloadError::Wait)?;
     if !status.success() {
-        tracing::error!("yt-dlp exited with non-zero status: id={}", id);
-        return Err("yt-dlp failed".into());
+        return Err(DownloadError::NonZeroExit(status.code()));
     }
 
-    let file = first_file_in(&format!("/tmp/ytdlp/{id}"))
-        .ok_or_else(|| "yt-dlp produced no output file".to_string())?;
+    let file = first_file_in(&format!("/tmp/ytdlp/{id}")).ok_or(DownloadError::NoOutputFile)?;
     Ok(file)
 }
 
