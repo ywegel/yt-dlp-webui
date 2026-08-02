@@ -7,6 +7,7 @@ use axum::http::header;
 use tokio_util::io::ReaderStream;
 
 use crate::AppState;
+use crate::job_status::JobStatus;
 
 pub async fn download(
     State(st): State<AppState>,
@@ -15,9 +16,10 @@ pub async fn download(
     tracing::info!("Downloading file: id={}", id);
 
     let file_path: Option<String> = sqlx::query_scalar(
-        "SELECT file FROM jobs WHERE id = ? AND status = 'done' AND file IS NOT NULL",
+        "SELECT file FROM jobs WHERE id = ? AND status = ? AND file IS NOT NULL",
     )
     .bind(&id)
+    .bind(JobStatus::Done)
     .fetch_optional(&st.db)
     .await
     .map_err(|e| {

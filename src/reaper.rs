@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::AppState;
+use crate::job_status::JobStatus;
 
 pub async fn reaper(st: AppState, ttl: i64) {
     tracing::info!("Reaper spawned: TTL={} seconds", ttl);
@@ -8,9 +9,10 @@ pub async fn reaper(st: AppState, ttl: i64) {
     loop {
         tick.tick().await;
         let rows = sqlx::query_as::<_, (String, String)>(
-            "SELECT id, file FROM jobs WHERE status='done' AND \
+            "SELECT id, file FROM jobs WHERE status=? AND \
              (strftime('%s','now') - max(completed_at, coalesce(last_download_at,0))) > ?",
         )
+        .bind(JobStatus::Done)
         .bind(ttl)
         .fetch_all(&st.db)
         .await
@@ -18,7 +20,8 @@ pub async fn reaper(st: AppState, ttl: i64) {
 
         for (id, file) in rows {
             tracing::info!("Removing expired file: id={}, file={}", id, file);
-            sqlx::query("UPDATE jobs SET status='expired' WHERE id=?")
+            sqlx::query("UPDATE jobs SET status=? WHERE id=?")
+                .bind(JobStatus::Expired)
                 .bind(&id)
                 .execute(&st.db)
                 .await

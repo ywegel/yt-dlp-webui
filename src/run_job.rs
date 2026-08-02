@@ -2,6 +2,7 @@ use tokio::sync::broadcast::Sender;
 
 use crate::AppState;
 use crate::Progress;
+use crate::job_status::JobStatus;
 use crate::submit::Mode;
 
 #[derive(Debug, thiserror::Error)]
@@ -48,8 +49,9 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
     match do_download(&id, &url, mode, &tx).await {
         Ok(file) => {
             let _ = sqlx::query(
-                "UPDATE jobs SET status='done', file=?, completed_at=strftime('%s','now') WHERE id=?",
+                "UPDATE jobs SET status=?, file=?, completed_at=strftime('%s','now') WHERE id=?",
             )
+            .bind(JobStatus::Done)
             .bind(&file)
             .bind(&id)
             .execute(&st.db)
@@ -60,7 +62,8 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
             let _ = tx.send(Progress::Done { file });
         }
         Err(e) => {
-            let _ = sqlx::query("UPDATE jobs SET status='failed' WHERE id=?")
+            let _ = sqlx::query("UPDATE jobs SET status=? WHERE id=?")
+                .bind(JobStatus::Failed)
                 .bind(&id)
                 .execute(&st.db)
                 .await

@@ -1,6 +1,7 @@
 mod config;
 mod download;
 mod events;
+mod job_status;
 mod reaper;
 mod run_job;
 mod submit;
@@ -61,7 +62,8 @@ async fn main() {
             id              TEXT PRIMARY KEY,
             url             TEXT NOT NULL,
             mode            TEXT NOT NULL,
-            status          TEXT NOT NULL DEFAULT 'queued',
+            status          TEXT NOT NULL DEFAULT 'queued'
+                                CHECK (status IN ('queued','done','failed','expired')),
             file            TEXT,
             created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now')),
             completed_at    INTEGER,

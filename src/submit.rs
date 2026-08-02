@@ -4,6 +4,7 @@ use tokio::sync::broadcast;
 
 use crate::AppState;
 use crate::Progress;
+use crate::job_status::JobStatus;
 use crate::run_job::run_job;
 
 #[derive(serde::Deserialize)]
@@ -41,10 +42,11 @@ pub async fn submit(State(st): State<AppState>, Json(req): Json<SubmitReq>) -> J
     );
 
     let id = uuid::Uuid::new_v4().to_string();
-    let result = sqlx::query("INSERT INTO jobs (id, url, mode, status) VALUES (?,?,?,'queued')")
+    let result = sqlx::query("INSERT INTO jobs (id, url, mode, status) VALUES (?,?,?,?)")
         .bind(&id)
         .bind(&req.url)
         .bind(req.mode.as_str())
+        .bind(JobStatus::Queued)
         .execute(&st.db)
         .await;
 
