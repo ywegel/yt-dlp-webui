@@ -4,4 +4,4 @@ port = 8080
 
 [jobs]
 max_concurrent = 3
-reaper_interval_secs = 600
+file_ttl_secs = 600
