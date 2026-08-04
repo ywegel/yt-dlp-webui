@@ -18,3 +18,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 toml = "0.8"
 thiserror = "2"
+
+[dev-dependencies]
+strum = { version = "0.28", features = ["derive"] }

@@ -5,10 +5,12 @@
 /// below, which keeps the on-disk values identical to the literals we used
 /// before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, serde::Serialize)]
+#[cfg_attr(test, derive(strum::EnumIter, strum::VariantArray))]
 #[sqlx(rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Queued,
+    Running,
     Done,
     Failed,
     Expired,
@@ -16,6 +18,8 @@ pub enum JobStatus {
 
 #[cfg(test)]
 mod tests {
+    use strum::VariantArray;
+
     use super::*;
 
     /// Pins the on-disk representation: these strings predate the enum and
@@ -28,12 +32,19 @@ mod tests {
             .await
             .unwrap();
 
-        for (status, text) in [
+        let all_status = [
             (JobStatus::Queued, "queued"),
+            (JobStatus::Running, "running"),
             (JobStatus::Done, "done"),
             (JobStatus::Failed, "failed"),
             (JobStatus::Expired, "expired"),
-        ] {
+        ];
+
+        // Make sure that all status variants are checked, so that changes don't forget
+        let covered: Vec<JobStatus> = all_status.iter().map(|(s, _)| *s).collect();
+        assert_eq!(covered.as_slice(), JobStatus::VARIANTS);
+
+        for (status, text) in all_status {
             sqlx::query("INSERT INTO t (status) VALUES (?)")
                 .bind(status)
                 .execute(&db)

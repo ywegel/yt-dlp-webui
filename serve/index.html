@@ -1,4 +1,9 @@
 <!doctype html>
+<!--
+  Heads up: this entire frontend — markup, styles and script — was vibecoded.
+  It has not been reviewed line by line, so treat it as a prototype rather than
+  as a reference for how the rest of this project is written.
+-->
 <html lang="de">
 <head>
 <meta charset="utf-8">
@@ -19,7 +24,7 @@
     --track:#ececee;
     --field:#fbfbfa;
 
-    /* ── Die einzige Akzentfarbe. Hier eine Zeile ändern, um alles umzufärben. ── */
+    /* The only accent colour. Change this one line to recolour everything. */
     --accent:#fb4f14;
     --accent-press:#dd420e;
     --accent-soft:rgba(251,79,20,.13);
@@ -70,7 +75,6 @@
     padding:32px 30px 24px;
   }
 
-  /* ── Kopf ── */
   .head{ display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
   .kicker{
     font-family:var(--mono);
@@ -93,7 +97,6 @@
   }
   .sub{ color:var(--text-2); font-size:14px; margin:0 0 26px; }
 
-  /* ── Label ── */
   label.field-label{
     display:block;
     font-family:var(--mono);
@@ -104,7 +107,6 @@
     margin:0 0 9px;
   }
 
-  /* ── URL-Eingabe ── */
   .input{
     width:100%;
     height:50px;
@@ -125,7 +127,6 @@
     background:var(--card);
   }
 
-  /* ── Segmentierte Auswahl (Video / Audio) ── */
   .seg{
     display:grid;
     grid-template-columns:1fr 1fr;
@@ -155,7 +156,6 @@
   }
   .seg button:focus-visible{ box-shadow:0 0 0 3px var(--accent-soft); }
 
-  /* ── Aktion ── */
   .submit{
     width:100%;
     height:50px;
@@ -179,7 +179,6 @@
   .submit:disabled{ opacity:.55; cursor:default; }
   .submit svg{ width:16px; height:16px; }
 
-  /* ── Ergebnis-/Fortschrittsbereich ── */
   .panel{ margin-top:22px; display:none; }
   .panel.show{ display:block; }
 
@@ -219,8 +218,17 @@
     border-radius:99px;
     transition:width .35s cubic-bezier(.3,.7,.2,1);
   }
+  /* Indeterminate bar while the job is still waiting in the queue. */
+  .bar.indet .fill{
+    width:35%;
+    transition:none;
+    animation:indet 1.3s cubic-bezier(.4,0,.2,1) infinite;
+  }
+  @keyframes indet{
+    from{ transform:translateX(-100%) }
+    to{ transform:translateX(286%) }
+  }
 
-  /* ── Fertig ── */
   .done{ display:none; }
   .done.show{ display:block; }
   .done-row{
@@ -256,7 +264,7 @@
   .save:hover{ background:var(--accent); color:#fff; }
   .save svg{ width:16px; height:16px; }
 
-  /* ── Fehler (monochrom, bewusst keine zweite Farbe) ── */
+  /* Errors stay monochrome on purpose: no second accent colour. */
   .error{ display:none; }
   .error.show{ display:block; }
   .error-box{
@@ -270,7 +278,6 @@
   .error-box strong{ font-weight:600; }
   .error-box span{ color:var(--text-2); }
 
-  /* ── Zurücksetzen ── */
   .reset{
     display:none;
     width:100%;
@@ -285,7 +292,6 @@
   .reset.show{ display:block; }
   .reset:hover{ color:var(--text); }
 
-  /* ── Status-Konsole am Fuß ── */
   .console{
     display:flex; align-items:center; gap:8px;
     margin-top:24px; padding-top:16px;
@@ -299,17 +305,18 @@
     background:var(--text-3);
     transition:background .2s;
   }
+  .console.queued .dot{ background:var(--text-2); animation:pulse 1.9s ease-in-out infinite; }
   .console.running .dot{ background:var(--accent); animation:pulse 1.1s ease-in-out infinite; }
   .console.done .dot{ background:var(--accent); }
   @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.3} }
 
-  /* ── Einblendung beim Laden ── */
   @keyframes rise{ from{opacity:0; transform:translateY(9px)} to{opacity:1; transform:none} }
   .reveal{ animation:rise .5s cubic-bezier(.2,.7,.2,1) both; }
   @media (prefers-reduced-motion: reduce){
     .reveal{ animation:none; }
     .fill{ transition:none; }
-    .console.running .dot{ animation:none; }
+    .console.running .dot, .console.queued .dot{ animation:none; }
+    .bar.indet .fill{ animation:none; width:100%; opacity:.35; }
   }
 </style>
 </head>
@@ -337,16 +344,14 @@
       Herunterladen
     </button>
 
-    <!-- Fortschritt -->
     <section class="panel" id="panel" aria-live="polite">
       <div class="meta">
         <span class="title" id="title">Wird vorbereitet…</span>
         <span class="pct" id="pct">0%</span>
       </div>
-      <div class="bar"><div class="fill" id="fill"></div></div>
+      <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
     </section>
 
-    <!-- Fertig -->
     <section class="done" id="doneBox" aria-live="polite">
       <div class="done-row">
         <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
@@ -358,9 +363,8 @@
       </a>
     </section>
 
-    <!-- Fehler -->
     <section class="error" id="errorBox" aria-live="polite">
-      <div class="error-box"><strong>Download fehlgeschlagen.</strong> <span id="errMsg">Bitte Link prüfen und erneut versuchen.</span></div>
+      <div class="error-box"><strong id="errTitle">Download fehlgeschlagen.</strong> <span id="errMsg">Bitte Link prüfen und erneut versuchen.</span></div>
     </section>
 
     <button class="reset" id="reset">Neuer Download</button>
@@ -373,10 +377,12 @@
 <script>
   const el = id => document.getElementById(id);
   const url = el('url'), go = el('go');
-  const panel = el('panel'), fill = el('fill'), pct = el('pct'), title = el('title');
+  const panel = el('panel'), bar = el('bar'), fill = el('fill'), pct = el('pct'), title = el('title');
   const doneBox = el('doneBox'), doneName = el('doneName'), save = el('save');
-  const errorBox = el('errorBox'), errMsg = el('errMsg');
+  const errorBox = el('errorBox'), errTitle = el('errTitle'), errMsg = el('errMsg');
   const reset = el('reset'), cons = el('console'), statusText = el('statusText');
+
+  let es = null;
 
   let mode = 'video';
   document.querySelectorAll('.seg button').forEach(b => {
@@ -391,10 +397,25 @@
     cons.className = 'console' + (state ? ' ' + state : '');
     statusText.textContent = text;
   }
-  function showRunning(){
+  function showBusy(){
     panel.classList.add('show'); doneBox.classList.remove('show');
     errorBox.classList.remove('show'); reset.classList.remove('show');
     go.disabled = true; url.disabled = true;
+  }
+  function showQueued(label = 'In Warteschlange…'){
+    showBusy();
+    title.textContent = label;
+    bar.classList.add('indet');
+    fill.style.width = '';
+    pct.textContent = '';
+    setStatus('queued', 'wartet…');
+  }
+  function showRunning(percent){
+    showBusy();
+    title.textContent = 'Wird heruntergeladen…';
+    bar.classList.remove('indet');
+    fill.style.width = percent + '%';
+    pct.textContent = Math.round(percent) + '%';
     setStatus('running', 'lädt…');
   }
   function showDone(name, href){
@@ -405,16 +426,19 @@
     doneBox.classList.add('show'); reset.classList.add('show');
     setStatus('done', 'fertig');
   }
-  function showError(msg){
+  function showError(msg, headline = 'Download fehlgeschlagen.'){
     panel.classList.remove('show'); doneBox.classList.remove('show');
+    errTitle.textContent = headline;
     errMsg.textContent = msg;
     errorBox.classList.add('show'); reset.classList.add('show');
     go.disabled = false; url.disabled = false;
     setStatus('', 'fehler');
   }
   function resetAll(){
+    if(es){ es.close(); es = null; }
     panel.classList.remove('show'); doneBox.classList.remove('show');
     errorBox.classList.remove('show'); reset.classList.remove('show');
+    bar.classList.remove('indet');
     fill.style.width = '0%'; pct.textContent = '0%';
     go.disabled = false; url.disabled = false; url.value = '';
     setStatus('', 'bereit'); url.focus();
@@ -434,18 +458,74 @@
   url.addEventListener('keydown', e => { if(e.key === 'Enter') go.click(); });
 
   async function start(value, mode){
-    showRunning();
-    const r = await fetch('/api/submit', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ url:value, mode })
-    });
-    const { id } = await r.json();
-    const es = new EventSource(`/api/jobs/${id}/events`);
-    es.onmessage = e => {
+    if(es){ es.close(); es = null; }
+    showQueued('Wird vorbereitet…');
+
+    let id;
+    try {
+      const r = await fetch('/api/submit', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ url:value, mode })
+      });
+      if(!r.ok) throw new Error(`submit: HTTP ${r.status}`);
+      ({ id } = await r.json());
+      if(!id) throw new Error('submit: keine Job-ID erhalten');
+    } catch (err) {
+      console.error(err);
+      showError('Der Job konnte nicht angelegt werden. Bitte erneut versuchen.');
+      return;
+    }
+
+    listen(id);
+  }
+
+  function listen(id){
+    const source = new EventSource(`/api/jobs/${id}/events`);
+    es = source;
+
+    const stop = () => { source.close(); if(es === source) es = null; };
+
+    source.onmessage = e => {
+      if(es !== source) return;            // stale stream, ignore
       const p = JSON.parse(e.data);
-      if(p.status === 'Running'){ fill.style.width = p.percent+'%'; pct.textContent = Math.round(p.percent)+'%'; }
-      if(p.status === 'Done'){   es.close(); showDone(p.file.split('/').pop(), `/api/jobs/${id}/file`); }
-      if(p.status === 'Failed'){ es.close(); showError(p.error); }
+      switch(p.status){
+        case 'Queued':
+          showQueued();
+          break;
+        case 'Running':
+          showRunning(p.percent);
+          break;
+        case 'Done':
+          stop();
+          showDone(p.file.split('/').pop(), `/api/jobs/${id}/file`);
+          break;
+        case 'Failed':
+          stop();
+          showError(p.user_facing_error || 'Unbekannter Fehler.');
+          break;
+        case 'Expired':
+          stop();
+          showError('Die Datei wurde nach Ablauf der Aufbewahrungsfrist gelöscht.',
+                    'Datei nicht mehr verfügbar.');
+          break;
+        default:
+          console.warn('Unbekannter Status:', p);
+      }
+    };
+
+    // CLOSED means the server answered with something other than 200 (e.g. 404)
+    // and the browser has given up for good. CONNECTING means the stream ended or
+    // dropped and the browser is reconnecting on its own — the next snapshot will
+    // correct the display, so only nudge the status line here.
+    source.onerror = () => {
+      if(es !== source) return;
+      if(source.readyState === EventSource.CLOSED){
+        es = null;
+        showError('Dieser Job ist unbekannt oder wurde bereits entfernt.',
+                  'Job nicht gefunden.');
+      } else {
+        setStatus('', 'verbinde neu…');
+      }
     };
   }
 </script>
