@@ -1,5 +1,7 @@
 mod config;
 
+use std::time::Duration;
+
 use axum::serve;
 use tracing_subscriber::fmt::format::FmtSpan;
 use yt_dlp_webui::AppState;
@@ -44,7 +46,11 @@ async fn main() -> Result<(), AppError> {
         Err(e) => tracing::error!("Could not requeue interrupted jobs: {e:?}"),
     }
 
-    tokio::spawn(yt_dlp_webui::reaper(st.clone(), config.jobs.file_ttl_secs));
+    tokio::spawn(yt_dlp_webui::reaper(
+        st.clone(),
+        config.jobs.file_ttl_secs,
+        Duration::from_secs(config.jobs.reaper_interval_secs),
+    ));
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

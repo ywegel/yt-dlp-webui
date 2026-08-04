@@ -22,6 +22,10 @@ fn default_reaper_file_ttl_secs() -> i64 {
     600
 }
 
+fn default_reaper_interval_secs() -> u64 {
+    60
+}
+
 #[derive(serde::Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
@@ -51,8 +55,13 @@ impl Default for ServerConfig {
 pub struct JobsConfig {
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
+    /// How long a finished download is kept before the reaper deletes it.
     #[serde(default = "default_reaper_file_ttl_secs")]
     pub file_ttl_secs: i64,
+    /// How often the reaper looks for expired downloads. A file therefore
+    /// survives up to `file_ttl_secs + reaper_interval_secs`.
+    #[serde(default = "default_reaper_interval_secs")]
+    pub reaper_interval_secs: u64,
 }
 
 impl Default for JobsConfig {
@@ -60,6 +69,7 @@ impl Default for JobsConfig {
         Self {
             max_concurrent: default_max_concurrent(),
             file_ttl_secs: default_reaper_file_ttl_secs(),
+            reaper_interval_secs: default_reaper_interval_secs(),
         }
     }
 }

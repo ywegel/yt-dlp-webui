@@ -11,7 +11,6 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::get;
 use axum::routing::post;
-use sqlx::sqlite::SqliteQueryResult;
 use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::sync::watch;
