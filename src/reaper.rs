@@ -9,21 +9,22 @@ use crate::job_status::JobStatus;
 ///
 /// `interval` is a [`Duration`] rather than a second count so it cannot be
 /// swapped with `ttl` at the call site.
-pub async fn reaper(st: AppState, ttl: i64, interval: Duration) {
+pub async fn reaper(st: AppState, ttl: i64, db_entry_ttl: i64, interval: Duration) {
     // `tokio::time::interval` panics on a zero period, which would kill this
     // task silently and stop all cleanup until the next restart.
     let interval = interval.max(Duration::from_secs(1));
 
     tracing::info!(
-        "Reaper spawned: TTL={}s, interval={}s",
+        "Reaper spawned: file_ttl={}s, db_entry_ttl={}s, interval={}s",
         ttl,
+        db_entry_ttl,
         interval.as_secs()
     );
 
     let mut tick = tokio::time::interval(interval);
     loop {
         tick.tick().await;
-        reap_once(&st, ttl).await;
+        reap_once(&st, ttl, db_entry_ttl).await;
     }
 }
 
@@ -33,7 +34,7 @@ pub async fn reaper(st: AppState, ttl: i64, interval: Duration) {
 /// The row is marked `expired` before the file is removed, so a failed delete
 /// leaks disk space rather than leaving a client with a `done` job whose file
 /// is already gone.
-pub async fn reap_once(st: &AppState, ttl: i64) -> usize {
+pub async fn reap_once(st: &AppState, ttl: i64, db_entry_ttl: i64) -> usize {
     let rows = sqlx::query_as::<_, (String, String)>(
         "UPDATE jobs SET status=? \
          WHERE status=? AND \
@@ -59,6 +60,19 @@ pub async fn reap_once(st: &AppState, ttl: i64) -> usize {
         if let Err(e) = tokio::fs::remove_file(file).await {
             tracing::warn!("Failed to remove file {}: {}", file, e);
         }
+    }
+
+    if let Err(e) = sqlx::query(
+        "DELETE FROM jobs WHERE status IN (?, ?) \
+         AND (strftime('%s','now') - coalesce(completed_at, created_at)) > ?",
+    )
+    .bind(JobStatus::Expired)
+    .bind(JobStatus::Failed)
+    .bind(db_entry_ttl)
+    .execute(&st.db)
+    .await
+    {
+        tracing::error!("Could not purge old job entries: {e:?}");
     }
 
     rows.len()

@@ -8,3 +8,5 @@ max_concurrent = 3
 file_ttl_secs = 600
 # How often the reaper checks for expired downloads.
 reaper_interval_secs = 60
+# How long an expired or failed job entry is kept in the database before being deleted.
+db_entry_ttl_secs = 2592000 # 30 days

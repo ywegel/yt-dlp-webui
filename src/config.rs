@@ -26,6 +26,10 @@ fn default_reaper_interval_secs() -> u64 {
     60
 }
 
+fn default_reaper_row_ttl_secs() -> i64 {
+    60 * 60 * 24 * 30 // 30 days
+}
+
 #[derive(serde::Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
@@ -62,6 +66,10 @@ pub struct JobsConfig {
     /// survives up to `file_ttl_secs + reaper_interval_secs`.
     #[serde(default = "default_reaper_interval_secs")]
     pub reaper_interval_secs: u64,
+    /// How long an expired or failed job entry is kept in the database before
+    /// being deleted.
+    #[serde(default = "default_reaper_row_ttl_secs")]
+    pub db_entry_ttl_secs: i64,
 }
 
 impl Default for JobsConfig {
@@ -70,6 +78,7 @@ impl Default for JobsConfig {
             max_concurrent: default_max_concurrent(),
             file_ttl_secs: default_reaper_file_ttl_secs(),
             reaper_interval_secs: default_reaper_interval_secs(),
+            db_entry_ttl_secs: default_reaper_row_ttl_secs(),
         }
     }
 }
