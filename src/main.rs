@@ -3,6 +3,7 @@ mod config;
 use std::time::Duration;
 
 use axum::serve;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
 use yt_dlp_webui::AppState;
 
@@ -23,7 +24,9 @@ pub enum AppError {
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO) // TODO: Set tracing leve from env
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_target(true)
         .with_thread_ids(true)
         .with_file(true)
