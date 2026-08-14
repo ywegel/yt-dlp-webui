@@ -77,9 +77,9 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
                 }
                 Ok(res) => {
                     tracing::error!(
-                         "Could not persist success (no rows updated): id={id}, rows_affected={}",
-                         res.rows_affected()
-                     );
+                        "Could not persist success (no rows updated): id={id}, rows_affected={}",
+                        res.rows_affected()
+                    );
                     let _ = tokio::fs::remove_file(&file).await;
                     let _ = tx.send(Progress::failed("Internal error"));
                 }

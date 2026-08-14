@@ -74,9 +74,9 @@ mod tests {
     use sqlx::SqlitePool;
 
     use super::*;
-    use crate::test_support::insert_job;
-    use crate::test_support::open_events;
-    use crate::test_support::register_channel;
+    use crate::test_helpers::insert_job;
+    use crate::test_helpers::open_events;
+    use crate::test_helpers::register_channel;
 
     /// A semaphore of 0 blocks `yt-dlp`, as it is not available in tests.
     fn state(db: SqlitePool) -> AppState {

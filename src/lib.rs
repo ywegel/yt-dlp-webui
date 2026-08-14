@@ -5,7 +5,7 @@ mod reaper;
 mod run_job;
 mod submit;
 #[cfg(test)]
-mod test_support;
+mod test_helpers;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -122,8 +122,8 @@ mod tests {
     use sqlx::SqlitePool;
 
     use super::*;
-    use crate::test_support::insert_job;
-    use crate::test_support::job_status;
+    use crate::test_helpers::insert_job;
+    use crate::test_helpers::job_status;
 
     /// Restart recovery: everything non-terminal is picked up again, everything
     /// terminal is left alone.
