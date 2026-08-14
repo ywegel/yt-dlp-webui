@@ -4,6 +4,8 @@ mod job_status;
 mod reaper;
 mod run_job;
 mod submit;
+#[cfg(test)]
+mod test_support;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -86,30 +88,10 @@ pub fn app(state: AppState) -> Router {
 pub async fn connect_db(url: &str) -> Result<sqlx::SqlitePool, sqlx::Error> {
     // TODO: Consider adding WAL + busy_timeout
     let db = sqlx::SqlitePool::connect(url).await?;
-    init_db(&db).await?;
+
+    sqlx::migrate!().run(&db).await?;
+
     Ok(db)
-}
-
-async fn init_db(db: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "
-        CREATE TABLE IF NOT EXISTS jobs (
-            id              TEXT PRIMARY KEY,
-            url             TEXT NOT NULL,
-            mode            TEXT NOT NULL CHECK (mode IN ('video','audio')),
-            status          TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done','failed','expired')),
-            error           TEXT,
-            file            TEXT,
-            created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-            completed_at    INTEGER,
-            last_download_at INTEGER
-        )
-    ",
-    )
-        .execute(db)
-        .await?;
-
-    Ok(())
 }
 
 /// Anything still non-terminal was interrupted by a restart. Reset it to
@@ -133,4 +115,46 @@ pub async fn requeue_interrupted(st: &AppState) -> Result<usize, sqlx::Error> {
         st.spawn_job(id, url, mode).await;
     }
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::SqlitePool;
+
+    use super::*;
+    use crate::test_support::insert_job;
+    use crate::test_support::job_status;
+
+    /// Restart recovery: everything non-terminal is picked up again, everything
+    /// terminal is left alone.
+    #[sqlx::test]
+    async fn requeue_restarts_only_unfinished_jobs(db: SqlitePool) {
+        // Semaphore of 0, so that `yt-dlp` never starts
+        let st = AppState::new(db, 0);
+        insert_job(&st.db, "was-running", JobStatus::Running, None, None).await;
+        insert_job(&st.db, "was-queued", JobStatus::Queued, None, None).await;
+        insert_job(
+            &st.db,
+            "finished",
+            JobStatus::Done,
+            Some("/tmp/f.mp4"),
+            None,
+        )
+        .await;
+        insert_job(&st.db, "broken", JobStatus::Failed, None, Some("nope")).await;
+
+        assert_eq!(requeue_interrupted(&st).await.unwrap(), 2);
+
+        assert_eq!(job_status(&st.db, "was-running").await, JobStatus::Queued);
+        assert_eq!(job_status(&st.db, "was-queued").await, JobStatus::Queued);
+        assert_eq!(job_status(&st.db, "finished").await, JobStatus::Done);
+        assert_eq!(job_status(&st.db, "broken").await, JobStatus::Failed);
+
+        // Every requeued job owns a channel before the listener binds, so no
+        // client can arrive while neither a channel nor a row is available.
+        let channels = st.channels.lock().await;
+        assert_eq!(channels.len(), 2);
+        assert!(channels.contains_key("was-running"));
+        assert!(channels.contains_key("was-queued"));
+    }
 }
