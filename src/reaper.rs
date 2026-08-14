@@ -35,9 +35,12 @@ pub async fn reaper(st: AppState, ttl: i64, interval: Duration) {
 /// is already gone.
 pub async fn reap_once(st: &AppState, ttl: i64) -> usize {
     let rows = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, file FROM jobs WHERE status=? AND \
-         (strftime('%s','now') - max(completed_at, coalesce(last_download_at,0))) > ?",
+        "UPDATE jobs SET status=? \
+         WHERE status=? AND \
+         (strftime('%s','now') - max(completed_at, coalesce(last_download_at,0))) > ? \
+         RETURNING id, file",
     )
+    .bind(JobStatus::Expired)
     .bind(JobStatus::Done)
     .bind(ttl)
     .fetch_all(&st.db)
@@ -46,30 +49,17 @@ pub async fn reap_once(st: &AppState, ttl: i64) -> usize {
     let rows = match rows {
         Ok(rows) => rows,
         Err(e) => {
-            tracing::error!("Could not query expired jobs: {e:?}");
+            tracing::error!("Could not mark jobs expired: {e:?}");
             return 0;
         }
     };
 
-    let mut expired = 0;
-    for (id, file) in rows {
+    for (id, file) in &rows {
         tracing::info!("Removing expired file: id={}, file={}", id, file);
-
-        if let Err(e) = sqlx::query("UPDATE jobs SET status=? WHERE id=?")
-            .bind(JobStatus::Expired)
-            .bind(&id)
-            .execute(&st.db)
-            .await
-        {
-            tracing::error!("Could not mark job expired: id={id}, error={e:?}");
-            continue;
-        }
-        expired += 1;
-
-        if let Err(e) = tokio::fs::remove_file(&file).await {
+        if let Err(e) = tokio::fs::remove_file(file).await {
             tracing::warn!("Failed to remove file {}: {}", file, e);
         }
     }
 
-    expired
+    rows.len()
 }
