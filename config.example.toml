@@ -4,4 +4,7 @@ port = 8080
 
 [jobs]
 max_concurrent = 3
-reaper_interval_secs = 600
+# How long a finished download is kept before it is deleted.
+file_ttl_secs = 600
+# How often the reaper checks for expired downloads.
+reaper_interval_secs = 60

@@ -1,7 +1,8 @@
-use tokio::sync::broadcast::Sender;
+use tokio::sync::watch::Sender;
 
 use crate::AppState;
 use crate::Progress;
+use crate::job_status::JobStatus;
 use crate::submit::Mode;
 
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +33,12 @@ impl DownloadError {
 }
 
 pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Sender<Progress>) {
+    let _permit = st
+        .limiter
+        .acquire()
+        .await
+        .expect("semaphore was closed before run_job could acquire a permit");
+
     tracing::info!(
         "Starting download job: id={}, url={}, mode={}",
         id,
@@ -39,37 +46,69 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
         mode.as_str()
     );
 
-    let _permit = st
-        .limiter
-        .acquire()
+    if let Err(e) = sqlx::query("UPDATE jobs SET status=? WHERE id=? AND status=?")
+        .bind(JobStatus::Running)
+        .bind(&id)
+        .bind(JobStatus::Queued)
+        .execute(&st.db)
         .await
-        .expect("semaphore was closed before run_job could acquire a permit");
+    {
+        tracing::warn!("Could not mark job running: id={id}, error={e:?}");
+    }
+    let _ = tx.send(Progress::Running { percent: 0.0 });
 
     match do_download(&id, &url, mode, &tx).await {
         Ok(file) => {
-            let _ = sqlx::query(
-                "UPDATE jobs SET status='done', file=?, completed_at=strftime('%s','now') WHERE id=?",
+            let written = sqlx::query(
+                "UPDATE jobs SET status=?, file=?, completed_at=strftime('%s','now') WHERE id=? AND status IN (?,?)",
             )
-            .bind(&file)
-            .bind(&id)
-            .execute(&st.db)
-            .await
-            .inspect_err(|e| tracing::error!("Failed to update job status: {e:?}"));
+                .bind(JobStatus::Done)
+                .bind(&file)
+                .bind(&id)
+                .bind(JobStatus::Queued)
+                .bind(JobStatus::Running)
+                .execute(&st.db)
+                .await;
 
-            tracing::info!("Download completed: id={}, file={}", id, file);
-            let _ = tx.send(Progress::Done { file });
+            match written {
+                Ok(res) if res.rows_affected() == 1 => {
+                    tracing::info!("Download completed: id={id}, file={file}");
+                    let _ = tx.send(Progress::Done { file });
+                }
+                Ok(res) => {
+                    tracing::error!(
+                        "Could not persist success (no rows updated): id={id}, rows_affected={}",
+                        res.rows_affected()
+                    );
+                    let _ = tokio::fs::remove_file(&file).await;
+                    let _ = tx.send(Progress::failed("Internal error"));
+                }
+                Err(e) => {
+                    tracing::error!("Could not persist success: id={id}, error={e:?}");
+                    let _ = tokio::fs::remove_file(&file).await;
+                    let _ = tx.send(Progress::failed("Internal error"));
+                }
+            }
         }
         Err(e) => {
-            let _ = sqlx::query("UPDATE jobs SET status='failed' WHERE id=?")
+            tracing::error!("Download failed: id={}, error={:?}", id, e);
+            let user_facing_error = e.user_message();
+
+            if let Err(e) = sqlx::query(
+                "UPDATE jobs SET status=?, completed_at=strftime('%s','now'), error=? WHERE id=? AND status IN (?,?)",
+            )
+                .bind(JobStatus::Failed)
+                .bind(user_facing_error)
                 .bind(&id)
+                .bind(JobStatus::Queued)
+                .bind(JobStatus::Running)
                 .execute(&st.db)
                 .await
-                .inspect_err(|e| tracing::error!("Failed to update failed job: {e:?}"));
+            {
+                tracing::error!("Could not persist failure: id={id}, error={e:?}");
+            }
 
-            tracing::error!("Download failed: id={}, error={:?}", id, e);
-            let _ = tx.send(Progress::Failed {
-                error: e.user_message().to_string(),
-            });
+            let _ = tx.send(Progress::failed(user_facing_error));
         }
     }
 

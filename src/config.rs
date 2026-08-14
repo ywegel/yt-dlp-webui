@@ -1,3 +1,11 @@
+#[derive(thiserror::Error, Debug)]
+pub enum ConfigurationError {
+    #[error("Failed to load toml file: {0}")]
+    TomlError(#[from] toml::de::Error),
+    #[error("An IO error occurred: {0}")]
+    IoError(#[from] std::io::Error),
+}
+
 fn default_host() -> String {
     "0.0.0.0".to_string()
 }
@@ -10,8 +18,12 @@ fn default_max_concurrent() -> usize {
     3
 }
 
-fn default_reaper_interval_secs() -> i64 {
+fn default_reaper_file_ttl_secs() -> i64 {
     600
+}
+
+fn default_reaper_interval_secs() -> u64 {
+    60
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -43,28 +55,36 @@ impl Default for ServerConfig {
 pub struct JobsConfig {
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
+    /// How long a finished download is kept before the reaper deletes it.
+    #[serde(default = "default_reaper_file_ttl_secs")]
+    pub file_ttl_secs: i64,
+    /// How often the reaper looks for expired downloads. A file therefore
+    /// survives up to `file_ttl_secs + reaper_interval_secs`.
     #[serde(default = "default_reaper_interval_secs")]
-    pub reaper_interval_secs: i64,
+    pub reaper_interval_secs: u64,
 }
 
 impl Default for JobsConfig {
     fn default() -> Self {
         Self {
             max_concurrent: default_max_concurrent(),
+            file_ttl_secs: default_reaper_file_ttl_secs(),
             reaper_interval_secs: default_reaper_interval_secs(),
         }
     }
 }
 
 impl Config {
-    pub fn load() -> Self {
-        match std::fs::read_to_string("config.toml") {
-            Ok(contents) => toml::from_str(&contents).expect("Invalid config.toml"),
+    pub fn load() -> Result<Self, ConfigurationError> {
+        let contents = match std::fs::read_to_string("config.toml") {
+            Ok(contents) => contents,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 tracing::info!("No config.toml found, using defaults");
-                Self::default()
+                return Ok(Self::default());
             }
-            Err(e) => panic!("Failed to read config.toml: {e}"),
-        }
+            Err(e) => return Err(e.into()),
+        };
+
+        Ok(toml::from_str(&contents)?)
     }
 }

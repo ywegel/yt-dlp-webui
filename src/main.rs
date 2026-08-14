@@ -1,43 +1,27 @@
 mod config;
-mod download;
-mod events;
-mod reaper;
-mod run_job;
-mod submit;
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::time::Duration;
 
-use axum::Router;
-use axum::routing::get;
-use axum::routing::post;
-use tokio::sync::Mutex;
-use tokio::sync::Semaphore;
-use tokio::sync::broadcast::Sender;
+use axum::serve;
 use tracing_subscriber::fmt::format::FmtSpan;
+use yt_dlp_webui::AppState;
 
-use crate::download::download;
-use crate::events::events;
-use crate::reaper::reaper;
-use crate::submit::submit;
+use crate::config::ConfigurationError;
 
-#[derive(Clone)]
-struct AppState {
-    db: sqlx::SqlitePool,
-    limiter: Arc<Semaphore>,
-    channels: Arc<Mutex<HashMap<String, Sender<Progress>>>>,
-}
+#[derive(thiserror::Error, Debug)]
+pub enum AppError {
+    #[error("Configuration error: {0}")]
+    Config(#[from] ConfigurationError),
 
-#[derive(Clone, serde::Serialize)]
-#[serde(tag = "status")]
-enum Progress {
-    Running { percent: f32 },
-    Done { file: String },
-    Failed { error: String },
+    #[error("Database error: {0}")]
+    Database(#[from] sqlx::Error),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), AppError> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO) // TODO: Set tracing leve from env
         .with_target(true)
@@ -48,48 +32,32 @@ async fn main() {
         .compact()
         .init();
 
-    let config = config::Config::load();
+    let config = config::Config::load()?;
 
     tracing::debug!("yt-dlp-webui starting...");
 
-    let db = sqlx::SqlitePool::connect("sqlite:jobs.db?mode=rwc")
-        .await
-        .unwrap();
-    sqlx::query(
-        "
-        CREATE TABLE IF NOT EXISTS jobs (
-            id              TEXT PRIMARY KEY,
-            url             TEXT NOT NULL,
-            mode            TEXT NOT NULL,
-            status          TEXT NOT NULL DEFAULT 'queued',
-            file            TEXT,
-            created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-            completed_at    INTEGER,
-            last_download_at INTEGER
-        )
-    ",
-    )
-    .execute(&db)
-    .await
-    .unwrap();
+    let db = yt_dlp_webui::connect_db("sqlite:jobs.db?mode=rwc").await?;
 
-    let st = AppState {
-        db,
-        limiter: Arc::new(Semaphore::new(config.jobs.max_concurrent)),
-        channels: Arc::new(Mutex::new(HashMap::new())),
-    };
+    let st = AppState::new(db, config.jobs.max_concurrent);
 
-    tokio::spawn(reaper(st.clone(), config.jobs.reaper_interval_secs));
+    match yt_dlp_webui::requeue_interrupted(&st).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Requeued {n} interrupted job(s)"),
+        Err(e) => tracing::error!("Could not requeue interrupted jobs: {e:?}"),
+    }
 
-    let app = Router::new()
-        .route("/api/submit", post(submit))
-        .route("/api/jobs/{id}/events", get(events))
-        .route("/api/jobs/{id}/file", get(download))
-        .fallback_service(tower_http::services::ServeDir::new("./serve"))
-        .with_state(st);
+    tokio::spawn(yt_dlp_webui::reaper(
+        st.clone(),
+        config.jobs.file_ttl_secs,
+        Duration::from_secs(config.jobs.reaper_interval_secs),
+    ));
 
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    let l = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+
     tracing::info!("Listening on http://{}", addr);
-    axum::serve(l, app).await.unwrap();
+
+    serve(listener, yt_dlp_webui::app(st)).await?;
+
+    Ok(())
 }
