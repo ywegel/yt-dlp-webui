@@ -71,12 +71,21 @@ pub async fn run_job(st: AppState, id: String, url: String, mode: Mode, tx: Send
                 .await;
 
             match written {
-                Ok(_) => {
+                Ok(res) if res.rows_affected() == 1 => {
                     tracing::info!("Download completed: id={id}, file={file}");
                     let _ = tx.send(Progress::Done { file });
                 }
+                Ok(res) => {
+                    tracing::error!(
+                         "Could not persist success (no rows updated): id={id}, rows_affected={}",
+                         res.rows_affected()
+                     );
+                    let _ = tokio::fs::remove_file(&file).await;
+                    let _ = tx.send(Progress::failed("Internal error"));
+                }
                 Err(e) => {
                     tracing::error!("Could not persist success: id={id}, error={e:?}");
+                    let _ = tokio::fs::remove_file(&file).await;
                     let _ = tx.send(Progress::failed("Internal error"));
                 }
             }
