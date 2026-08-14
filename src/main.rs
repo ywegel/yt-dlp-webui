@@ -49,6 +49,7 @@ async fn main() -> Result<(), AppError> {
     tokio::spawn(yt_dlp_webui::reaper(
         st.clone(),
         config.jobs.file_ttl_secs,
+        config.jobs.db_entry_ttl_secs,
         Duration::from_secs(config.jobs.reaper_interval_secs),
     ));
 
