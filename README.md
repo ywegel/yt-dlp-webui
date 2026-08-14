@@ -2,6 +2,12 @@
 
 A minimal web UI for [yt-dlp](https://github.com/yt-dlp/yt-dlp). Paste a URL, pick video or audio, and download it directly to your device.
 
+## Legal
+
+Downloading copyrighted content without permission may be illegal in your country. Only use this tool for content you have the right to download.
+
+If you run this as a service, make sure it is only accessible to people you trust. Do not expose it to the public internet. Run it in a private network or put it behind a login.
+
 ## Requirements
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed and available on `PATH`
@@ -13,6 +19,10 @@ cargo run --release
 ```
 
 The server listens on `http://0.0.0.0:8080` by default.
+
+## Deployment
+
+For instructions on how to deploy this as a systemd service on Ubuntu, see [deploy/Deploy.md](deploy/Deploy.md).
 
 ## Configuration
 

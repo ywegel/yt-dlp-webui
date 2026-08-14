@@ -1,0 +1,17 @@
+[Unit]
+Description=yt-dlp-webui
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/yt-dlp-webui
+WorkingDirectory=/opt/yt-dlp-webui
+User=yt-dlp-webui
+Group=yt-dlp-webui
+PrivateTmp=true
+NoNewPrivileges=true
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target
