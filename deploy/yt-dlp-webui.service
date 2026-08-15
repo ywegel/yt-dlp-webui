@@ -7,11 +7,51 @@ ExecStart=/usr/local/bin/yt-dlp-webui
 WorkingDirectory=/opt/yt-dlp-webui
 User=yt-dlp-webui
 Group=yt-dlp-webui
-PrivateTmp=true
-NoNewPrivileges=true
 Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=info
+
+#Sandboxing features
+# https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html
+# Check with: `systemd-analyze security` or `systemd-analyze security yt-dlp-webui.service`
+
+## Filesystem
+PrivateTmp=yes
+ProtectHome=yes
+PrivateDevices=true
+RestrictNamespaces=yes
+
+### "strict" makes the entire filesystem read-only
+### Exceptions via ReadWritePaths
+### /tmp is writable because PrivateTmp provides a private /tmp (even with ProtectSystem=strict)ProtectSystem=strict
+ReadWritePaths=/opt/yt-dlp-webui
+
+## Capabilities
+### No capabilities needed: no port < 1024, no self-update, no privileged syscalls
+CapabilityBoundingSet=
+NoNewPrivileges=true
+
+# Network
+IPAddressDeny=link-local multicast
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+## Syscalls
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+
+## Kernel Hardening
+ProtectKernelTunables=yes
+ProtectKernelLogs=true
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+## Other
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ProtectClock=true
+LockPersonality=true
+RemoveIPC=true
 
 [Install]
 WantedBy=multi-user.target
